@@ -61,9 +61,12 @@
     <!-- 1. Панель управления (Controls) -->
     <div class="w-full md:w-1/4 bg-slate-800/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/50 p-6 flex flex-col gap-6 overflow-y-auto z-10 relative">
         <div class="flex justify-between items-center mb-2">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-3">
                 <h1 class="text-2xl font-extrabold text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400 tracking-tight">PID Симулятор</h1>
-                <button id="btn-info" class="w-6 h-6 rounded-full bg-slate-700 hover:bg-slate-500 text-slate-300 flex items-center justify-center text-xs font-bold transition-colors shadow-md border border-slate-600" title="Схема PID">?</button>
+                <button id="btn-info" class="flex items-center gap-1.5 px-3 py-1 bg-indigo-600/80 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all shadow-[0_0_12px_rgba(79,70,229,0.4)] border border-indigo-500/50 active:scale-95" title="Показать интерактивную схему">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Схема
+                </button>
             </div>
             
             <!-- Переключатель PID (Toggle Switch) -->
@@ -235,24 +238,29 @@
                     <text x="160" y="145" fill="#f8fafc" text-anchor="middle">+</text>
 
                     <rect x="220" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="2" />
-                    <text x="260" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Ошибка (e)</text>
+                    <text x="260" y="140" fill="#f8fafc" text-anchor="middle" font-weight="bold">Ошибка (e)</text>
+                    <text id="svg-err" x="260" y="155" fill="#ef4444" text-anchor="middle" font-size="12" font-family="monospace">0.0</text>
 
                     <rect x="360" y="40" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
-                    <text x="420" y="65" fill="#f8fafc" text-anchor="middle">Пропорц. (Kp)</text>
+                    <text x="420" y="58" fill="#f8fafc" text-anchor="middle">Пропорц. (Kp)</text>
+                    <text id="svg-p" x="420" y="73" fill="#f59e0b" text-anchor="middle" font-size="12" font-family="monospace">0.0</text>
 
-                    <rect x="360" y="120" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
-                    <text x="420" y="140" fill="#f8fafc" text-anchor="middle">Интеграл. (Ki)</text>
-                    <rect x="380" y="145" width="80" height="12" rx="4" fill="#3b82f6" opacity="0.8" />
-                    <text x="420" y="154" fill="#ffffff" text-anchor="middle" font-size="9" font-weight="bold">Anti-Windup</text>
+                    <rect x="360" y="120" width="120" height="45" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+                    <text x="420" y="135" fill="#f8fafc" text-anchor="middle">Интеграл. (Ki)</text>
+                    <text id="svg-i" x="420" y="148" fill="#f59e0b" text-anchor="middle" font-size="12" font-family="monospace">0.0</text>
+                    <rect x="380" y="152" width="80" height="11" rx="4" fill="#3b82f6" opacity="0.8" />
+                    <text x="420" y="160" fill="#ffffff" text-anchor="middle" font-size="8" font-weight="bold">Anti-Windup</text>
 
                     <rect x="360" y="200" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
-                    <text x="420" y="225" fill="#f8fafc" text-anchor="middle">Дифференц. (Kd)</text>
+                    <text x="420" y="218" fill="#f8fafc" text-anchor="middle">Дифференц. (Kd)</text>
+                    <text id="svg-d" x="420" y="233" fill="#f59e0b" text-anchor="middle" font-size="12" font-family="monospace">0.0</text>
 
                     <circle cx="530" cy="140" r="15" fill="#1e293b" stroke="#94a3b8" stroke-width="2" />
                     <text x="530" y="145" fill="#f8fafc" text-anchor="middle">Σ</text>
 
                     <rect x="580" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="2" />
-                    <text x="620" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Тяга (u)</text>
+                    <text x="620" y="140" fill="#f8fafc" text-anchor="middle" font-weight="bold">Тяга (u)</text>
+                    <text id="svg-thrust" x="620" y="155" fill="#10b981" text-anchor="middle" font-size="12" font-family="monospace">0.0</text>
 
                     <rect x="700" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="2" />
                     <text x="740" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Корабль</text>
@@ -459,6 +467,15 @@
                 if (thrust > currentMaxThrust) thrust = currentMaxThrust;
             } else {
                 state.integral = 0;
+            }
+
+            // Обновляем живые данные на схеме, если она открыта
+            if (!document.getElementById('modal-info').classList.contains('hidden')) {
+                document.getElementById('svg-err').textContent = error.toFixed(1);
+                document.getElementById('svg-p').textContent = pTerm.toFixed(1);
+                document.getElementById('svg-i').textContent = iTerm.toFixed(1);
+                document.getElementById('svg-d').textContent = dTerm.toFixed(1);
+                document.getElementById('svg-thrust').textContent = thrust.toFixed(1);
             }
 
             // 6. Динамика
