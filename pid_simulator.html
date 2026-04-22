@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PID Симулятор Космического Корабля</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Стилизация ползунков */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #4b5563;
+            border-radius: 2px;
+        }
+        /* Анимация пламени */
+        .flame {
+            background: linear-gradient(to bottom, #fde047 0%, #ea580c 50%, transparent 100%);
+            filter: blur(2px);
+            transform-origin: top center;
+            transition: transform 0.05s linear, opacity 0.05s linear;
+        }
+        /* Кастомный скроллбар для левой панели */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen w-screen overflow-hidden font-sans selection:bg-blue-500 selection:text-white flex flex-col md:flex-row p-4 gap-4">
+
+    <!-- 1. Панель управления (Controls) -->
+    <div class="w-full md:w-1/4 bg-slate-800/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/50 p-6 flex flex-col gap-6 overflow-y-auto z-10 relative">
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex items-center gap-2">
+                <h1 class="text-2xl font-extrabold text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-teal-400 tracking-tight">PID Симулятор</h1>
+                <button id="btn-info" class="w-6 h-6 rounded-full bg-slate-700 hover:bg-slate-500 text-slate-300 flex items-center justify-center text-xs font-bold transition-colors shadow-md border border-slate-600" title="Схема PID">?</button>
+            </div>
+            
+            <!-- Переключатель PID (Toggle Switch) -->
+            <label class="relative inline-flex items-center cursor-pointer" title="Включить/Выключить PID регулятор">
+                <input type="checkbox" id="pid-toggle" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+        </div>
+        
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Целевая высота (м)</label>
+                <span id="val-target" class="text-sm font-mono text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">70</span>
+            </div>
+            <input type="range" id="target" min="0" max="2000" value="70" step="1">
+        </div>
+
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Масштаб экрана (м)</label>
+                <span id="val-maxAlt" class="text-sm font-mono text-slate-400 bg-slate-400/10 px-2 py-0.5 rounded">100</span>
+            </div>
+            <input type="range" id="maxAlt" min="100" max="2000" value="100" step="10">
+        </div>
+
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Гравитация (м/с²)</label>
+                <span id="val-gravity" class="text-sm font-mono text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded">9.8</span>
+            </div>
+            <input type="range" id="gravity" min="0" max="20" value="9.8" step="0.1">
+        </div>
+
+        <div class="space-y-1 pt-2 border-t border-slate-700/50">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Kp (Пропорциональный)</label>
+                <span id="val-kp" class="text-sm font-mono text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">2.0</span>
+            </div>
+            <input type="range" id="kp" min="0" max="10" value="2.0" step="0.1">
+        </div>
+
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Ki (Интегральный)</label>
+                <span id="val-ki" class="text-sm font-mono text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">0.10</span>
+            </div>
+            <input type="range" id="ki" min="0" max="2" value="0.1" step="0.01">
+        </div>
+
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Kd (Дифференциальный)</label>
+                <span id="val-kd" class="text-sm font-mono text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">5.0</span>
+            </div>
+            <input type="range" id="kd" min="0" max="20" value="5.0" step="0.1">
+        </div>
+
+        <div class="space-y-1 pt-2 border-t border-slate-700/50">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Масса корабля</label>
+                <span id="val-mass" class="text-sm font-mono text-purple-400 bg-purple-400/10 px-2 py-0.5 rounded">1.0</span>
+            </div>
+            <input type="range" id="mass" min="1" max="10" value="1" step="0.1">
+        </div>
+
+        <div class="space-y-1">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-medium text-slate-300">Макс. тяга</label>
+                <span id="val-maxThrust" class="text-sm font-mono text-purple-400 bg-purple-400/10 px-2 py-0.5 rounded">100</span>
+            </div>
+            <input type="range" id="maxThrust" min="10" max="200" value="100" step="1">
+        </div>
+
+        <div class="mt-auto pt-4 border-t border-slate-700/50">
+            <div class="grid grid-cols-2 gap-3 text-xs text-slate-400 font-mono bg-slate-900/50 p-3 rounded-xl border border-slate-700/30 mb-4">
+                <div class="flex flex-col"><span>Тяга:</span> <span id="out-thrust" class="text-white text-sm">0.0</span></div>
+                <div class="flex flex-col"><span>Высота:</span> <span id="out-alt" class="text-white text-sm">0.0</span></div>
+                <div class="flex flex-col"><span>Скорость:</span> <span id="out-vel" class="text-white text-sm">0.0</span></div>
+                <div class="flex flex-col"><span>Ошибка:</span> <span id="out-err" class="text-white text-sm">0.0</span></div>
+            </div>
+            <button id="btn-reset" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-sky-500/20 active:scale-95">
+                Сбросить симуляцию
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. Визуализатор (Visualizer) -->
+    <div class="w-full md:w-2/4 bg-slate-950 rounded-2xl shadow-inner border border-slate-800 relative overflow-hidden flex justify-center z-0">
+        <!-- Звезды / Сетка на фоне -->
+        <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at center, #ffffff 1px, transparent 1px); background-size: 30px 30px; background-position: 0 0;"></div>
+        
+        <!-- Целевая высота (Target Line) -->
+        <div id="target-line" class="absolute w-full h-0 border-b-2 border-dashed border-red-500/80 z-10 transition-all duration-100" style="bottom: 70%;">
+            <span class="absolute bottom-0 left-4 text-red-400 text-xs font-mono font-bold tracking-widest uppercase bg-slate-950/80 px-2 py-0.5 rounded-t-md">ЦЕЛЬ</span>
+        </div>
+
+        <!-- Корабль-Точка (Rocket) -->
+        <div id="rocket-container" class="absolute z-20 w-0 h-0 left-1/2" style="bottom: 0%;">
+            <!-- Индикатор высоты (светящаяся точка точно по центру) -->
+            <div class="absolute w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_12px_#34d399] z-30 transform -translate-x-1/2 -translate-y-1/2"></div>
+            
+            <!-- Обертка для ракеты (смещена так, чтобы точка была в центре ракеты) -->
+            <div class="absolute flex flex-col items-center transform -translate-x-1/2 -translate-y-[18px] pointer-events-none">
+                <!-- Тело корабля (Маленькое) -->
+                <div class="relative w-6 h-8 bg-slate-200 rounded-t-[50%] rounded-b flex flex-col items-center shadow-[0_0_15px_rgba(255,255,255,0.15)] z-20">
+                    <div class="w-2 h-2 bg-sky-900 rounded-full mt-1.5 border border-slate-400 shadow-inner"></div>
+                    <div class="absolute -left-1.5 bottom-0 w-1.5 h-4 bg-red-600 rounded-tl-full rounded-bl-sm shadow-md z-10"></div>
+                    <div class="absolute -right-1.5 bottom-0 w-1.5 h-4 bg-red-600 rounded-tr-full rounded-br-sm shadow-md z-10"></div>
+                </div>
+                <!-- Сопло -->
+                <div class="w-4 h-1 bg-slate-700 rounded-b-sm z-10 border-b border-slate-900"></div>
+                <!-- Эффект пламени -->
+                <div id="flame" class="flame w-4 h-12 mt-0 opacity-0 scale-y-0 z-0"></div>
+            </div>
+        </div>
+        
+        <!-- Земля (Ground) -->
+        <div class="absolute bottom-0 w-full h-3 z-30">
+            <div class="w-full h-1 bg-emerald-500/50"></div>
+            <div class="w-full h-full bg-slate-800"></div>
+        </div>
+    </div>
+
+    <!-- 3. График в реальном времени (Graph) -->
+    <div class="w-full md:w-1/4 bg-slate-800/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-700/50 p-4 flex flex-col relative z-10">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-bold text-white tracking-wide">Телеметрия</h2>
+            <span class="flex h-2 w-2 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+        </div>
+        
+        <div class="flex-1 w-full bg-slate-900/80 rounded-xl relative overflow-hidden border border-slate-700/50 shadow-inner">
+            <canvas id="graphCanvas" class="absolute inset-0 w-full h-full"></canvas>
+        </div>
+        
+        <div class="flex justify-center gap-6 mt-4 text-xs text-slate-300 font-medium">
+            <div class="flex items-center gap-2"><div class="w-4 h-0.5 bg-red-500 border-dashed border-t-2"></div> Цель</div>
+            <div class="flex items-center gap-2"><div class="w-4 h-1 bg-emerald-400 rounded-full"></div> Высота</div>
+        </div>
+    </div>
+
+    <!-- Модальное окно "Схема PID" -->
+    <div id="modal-info" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-2xl max-w-4xl w-full mx-4 flex flex-col gap-4 relative animate-[fadeIn_0.2s_ease-out]">
+            <button id="btn-close-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors bg-slate-700 hover:bg-slate-600 rounded-full p-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <h2 class="text-2xl font-bold text-white mb-1">Как работает PID-регулятор?</h2>
+            <p class="text-slate-300 text-sm mb-2">PID (Пропорционально-Интегрально-Дифференциальный) регулятор рассчитывает тягу для двигателя, основываясь на разнице между текущей высотой и заданной целью.</p>
+            
+            <div class="bg-slate-900 rounded-xl p-4 overflow-x-auto text-sm border border-slate-700 font-mono text-center relative select-none shadow-inner">
+                <!-- SVG Block Diagram -->
+                <svg viewBox="0 0 800 300" class="w-full h-auto min-w-[600px]">
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                        </marker>
+                    </defs>
+                    
+                    <!-- Nodes -->
+                    <rect x="20" y="120" width="100" height="40" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2" />
+                    <text x="70" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Цель (Target)</text>
+
+                    <circle cx="160" cy="140" r="15" fill="#1e293b" stroke="#94a3b8" stroke-width="2" />
+                    <text x="160" y="145" fill="#f8fafc" text-anchor="middle">+</text>
+
+                    <rect x="220" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="2" />
+                    <text x="260" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Ошибка (e)</text>
+
+                    <rect x="360" y="40" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+                    <text x="420" y="65" fill="#f8fafc" text-anchor="middle">Пропорц. (Kp)</text>
+
+                    <rect x="360" y="120" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+                    <text x="420" y="140" fill="#f8fafc" text-anchor="middle">Интеграл. (Ki)</text>
+                    <rect x="380" y="145" width="80" height="12" rx="4" fill="#3b82f6" opacity="0.8" />
+                    <text x="420" y="154" fill="#ffffff" text-anchor="middle" font-size="9" font-weight="bold">Anti-Windup</text>
+
+                    <rect x="360" y="200" width="120" height="40" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+                    <text x="420" y="225" fill="#f8fafc" text-anchor="middle">Дифференц. (Kd)</text>
+
+                    <circle cx="530" cy="140" r="15" fill="#1e293b" stroke="#94a3b8" stroke-width="2" />
+                    <text x="530" y="145" fill="#f8fafc" text-anchor="middle">Σ</text>
+
+                    <rect x="580" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="2" />
+                    <text x="620" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Тяга (u)</text>
+
+                    <rect x="700" y="120" width="80" height="40" rx="8" fill="#1e293b" stroke="#a855f7" stroke-width="2" />
+                    <text x="740" y="145" fill="#f8fafc" text-anchor="middle" font-weight="bold">Корабль</text>
+
+                    <!-- Edges -->
+                    <path d="M 120 140 L 140 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 175 140 L 215 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    
+                    <!-- Split from error -->
+                    <path d="M 300 140 L 330 140" stroke="#94a3b8" stroke-width="2" />
+                    <path d="M 330 60 L 330 220" stroke="#94a3b8" stroke-width="2" />
+                    <path d="M 330 60 L 355 60" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 330 140 L 355 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 330 220 L 355 220" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+
+                    <!-- Merge to Sum -->
+                    <path d="M 480 60 L 500 60 L 500 130 L 512 130" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+                    <path d="M 480 140 L 510 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 480 220 L 500 220 L 500 150 L 512 150" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+
+                    <path d="M 545 140 L 575 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+                    <path d="M 660 140 L 695 140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+
+                    <!-- Feedback Loop -->
+                    <path d="M 740 160 L 740 270 L 160 270 L 160 155" stroke="#94a3b8" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+                    <text x="450" y="260" fill="#94a3b8" font-size="12">Обратная связь (Текущая высота)</text>
+                    <text x="175" y="165" fill="#ef4444" font-weight="bold">-</text>
+                </svg>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-slate-300 mt-2">
+                <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 shadow-inner">
+                    <strong class="text-amber-400 text-base block mb-2">Kp (Пропорциональный)</strong>
+                    Действует как пружина. Чем больше расстояние до цели (ошибка), тем сильнее тяга. Если Kp слишком большой, корабль будет агрессивно раскачиваться туда-сюда.
+                </div>
+                <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 shadow-inner">
+                    <strong class="text-amber-400 text-base block mb-2">Ki (Интегральный) <span class="bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded ml-1 align-middle tracking-wide">ANTI-WINDUP</span></strong>
+                    Накапливает ошибку со временем для борьбы с гравитацией. Оснащен системой <strong>Anti-Windup</strong>: она ставит накопление на паузу во время долгого свободного падения, спасая корабль от "интегральной ямы" и жесткого пролета мимо цели.
+                </div>
+                <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 shadow-inner">
+                    <strong class="text-amber-400 text-base block mb-2">Kd (Дифференциальный)</strong>
+                    Реагирует на скорость изменения ошибки. Работает как "амортизатор", гася колебания и заранее замедляя корабль при подлете к цели.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM элементы
+        const inputs = {
+            target: document.getElementById('target'),
+            gravity: document.getElementById('gravity'),
+            kp: document.getElementById('kp'),
+            ki: document.getElementById('ki'),
+            kd: document.getElementById('kd'),
+            mass: document.getElementById('mass'),
+            maxThrust: document.getElementById('maxThrust'),
+            maxAlt: document.getElementById('maxAlt')
+        };
+        const displays = {
+            target: document.getElementById('val-target'),
+            gravity: document.getElementById('val-gravity'),
+            kp: document.getElementById('val-kp'),
+            ki: document.getElementById('val-ki'),
+            kd: document.getElementById('val-kd'),
+            mass: document.getElementById('val-mass'),
+            maxThrust: document.getElementById('val-maxThrust'),
+            maxAlt: document.getElementById('val-maxAlt')
+        };
+        const readouts = {
+            thrust: document.getElementById('out-thrust'),
+            alt: document.getElementById('out-alt'),
+            vel: document.getElementById('out-vel'),
+            err: document.getElementById('out-err')
+        };
+        const visuals = {
+            rocket: document.getElementById('rocket-container'),
+            targetLine: document.getElementById('target-line'),
+            flame: document.getElementById('flame')
+        };
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Состояние симуляции
+        let state = {
+            altitude: 0,
+            velocity: 0,
+            integral: 0,
+            prevError: 0
+        };
+
+        // Настройки симуляции
+        const dt = 0.02; // Фиксированный шаг времени
+
+        // Данные графика
+        const history = [];
+        const MAX_HISTORY_SECONDS = 15;
+        const FPS = 50; // Примерная частота записи точек (50 раз в секунду)
+        let framesCounter = 0;
+
+        // Обработчик изменения ползунков
+        function updateDisplays() {
+            Object.keys(inputs).forEach(key => {
+                let decimals = inputs[key].step.includes('.') ? inputs[key].step.split('.')[1].length : 0;
+                displays[key].innerText = parseFloat(inputs[key].value).toFixed(decimals);
+            });
+            const maxA = parseFloat(inputs.maxAlt.value);
+            const targ = parseFloat(inputs.target.value);
+            visuals.targetLine.style.bottom = `${(targ / maxA) * 100}%`;
+        }
+
+        Object.keys(inputs).forEach(key => {
+            inputs[key].addEventListener('input', updateDisplays);
+        });
+
+        // Модальное окно информации
+        const modal = document.getElementById('modal-info');
+        document.getElementById('btn-info').addEventListener('click', () => {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        });
+        document.getElementById('btn-close-modal').addEventListener('click', () => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        });
+
+        // Обработчик сброса симуляции
+        const btnReset = document.getElementById('btn-reset');
+        btnReset.addEventListener('click', () => {
+            state.altitude = 0;
+            state.velocity = 0;
+            state.integral = 0;
+            state.prevError = parseFloat(inputs.target.value); 
+            history.length = 0; // Очищаем график
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // Адаптация размера Canvas
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            // Делаем линии четкими на экранах с высоким DPI
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Главный цикл (PID и Физика)
+        function loop() {
+            // Чтение входных параметров
+            const target = parseFloat(inputs.target.value);
+            const gravity = parseFloat(inputs.gravity.value);
+            const Kp = parseFloat(inputs.kp.value);
+            const Ki = parseFloat(inputs.ki.value);
+            const Kd = parseFloat(inputs.kd.value);
+            const mass = parseFloat(inputs.mass.value);
+            const currentMaxThrust = parseFloat(inputs.maxThrust.value);
+            const currentMaxAltitude = parseFloat(inputs.maxAlt.value);
+
+            // 1. Вычисление ошибки
+            let error = target - state.altitude;
+            
+            // 2. Дифференциал
+            let derivative = (error - state.prevError) / dt;
+
+            // 3. Предварительное вычисление тяги для умного Anti-Windup
+            let pTerm = Kp * error;
+            let dTerm = Kd * derivative;
+            let iTerm = Ki * state.integral;
+            let preThrust = pTerm + iTerm + dTerm;
+
+            // 4. Умный Интеграл (Conditional Integration / Anti-windup)
+            // Не накапливаем ошибку, если двигатель уже на пределе возможностей (0 или maxThrust),
+            // а ошибка толкает его еще дальше за эти пределы.
+            let isSaturatedTop = (preThrust >= currentMaxThrust && error > 0);
+            let isSaturatedBottom = (preThrust <= 0 && error < 0);
+            
+            if (!isSaturatedTop && !isSaturatedBottom) {
+                state.integral += error * dt;
+                // Базовое ограничение на всякий случай
+                if (state.integral > 2000) state.integral = 2000;
+                if (state.integral < -2000) state.integral = -2000;
+            }
+
+            // Пересчитываем итоговую тягу с новым интегралом
+            let thrust = 0;
+            if (document.getElementById('pid-toggle').checked) {
+                thrust = (Kp * error) + (Ki * state.integral) + (Kd * derivative);
+                
+                // 5. Ограничения тяги
+                if (thrust < 0) thrust = 0;
+                if (thrust > currentMaxThrust) thrust = currentMaxThrust;
+            } else {
+                state.integral = 0;
+            }
+
+            // 6. Динамика
+            let acceleration = (thrust / mass) - gravity;
+            state.velocity += acceleration * dt;
+            
+            // 7. Сопротивление (затухание)
+            state.velocity *= 0.98; 
+            
+            // 8. Изменение высоты
+            state.altitude += state.velocity * dt;
+
+            // 9. Столкновение с землей
+            if (state.altitude <= 0) {
+                state.altitude = 0;
+                if (state.velocity < 0) state.velocity = 0;
+            }
+            // Потолка теперь нет - можно лететь в открытый космос
+
+            state.prevError = error;
+
+            // --- ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ---
+            
+            // Движение корабля
+            visuals.rocket.style.bottom = `${(state.altitude / currentMaxAltitude) * 100}%`;
+            
+            // Эффект пламени
+            const thrustRatio = thrust / currentMaxThrust;
+            visuals.flame.style.transform = `scaleY(${thrustRatio * 1.2})`;
+            visuals.flame.style.opacity = thrustRatio > 0 ? thrustRatio * 0.8 + 0.2 : 0;
+
+            // Обновление цифр
+            readouts.thrust.innerText = thrust.toFixed(1);
+            readouts.alt.innerText = state.altitude.toFixed(1);
+            readouts.vel.innerText = state.velocity.toFixed(1);
+            readouts.err.innerText = error.toFixed(1);
+
+            // Запись точек для графика
+            framesCounter++;
+            if (framesCounter >= (60 / FPS)) { 
+                framesCounter = 0;
+                history.push({ t: target, a: state.altitude });
+                const maxPoints = MAX_HISTORY_SECONDS * FPS;
+                if (history.length > maxPoints) {
+                    history.shift(); // Удаляем старые данные
+                }
+                drawGraph();
+            }
+
+            // Следующий кадр
+            requestAnimationFrame(loop);
+        }
+
+        // Отрисовка графика
+        function drawGraph() {
+            // Учитываем CSS размер (так как мы делали scale для Retina экранов)
+            const w = canvas.getBoundingClientRect().width;
+            const h = canvas.getBoundingClientRect().height;
+            
+            ctx.clearRect(0, 0, w, h);
+            if (history.length === 0) return;
+
+            const maxPoints = MAX_HISTORY_SECONDS * FPS;
+            const dx = w / maxPoints; // Шаг по оси X
+
+            // Рисуем сетку (горизонтальные линии по 25%)
+            ctx.strokeStyle = 'rgba(71, 85, 105, 0.4)'; // slate-600/40
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let i=0; i<=4; i++) {
+                let y = h - (i/4)*h;
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+            }
+            ctx.stroke();
+
+            // Функция перевода высоты в Y координаты canvas с учетом масштаба
+            const currentMaxAltitude = parseFloat(inputs.maxAlt.value);
+            const margin = 10;
+            const getY = (val) => (h - margin) - (val / currentMaxAltitude) * (h - margin * 2);
+
+            // 1. Отрисовка линии Цели (Target) - Красный пунктир
+            ctx.beginPath();
+            ctx.strokeStyle = '#ef4444'; // red-500
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 6]);
+            for (let i = 0; i < history.length; i++) {
+                const x = w - (history.length - i - 1) * dx;
+                const y = getY(history[i].t);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]); // Сброс пунктира
+
+            // 2. Отрисовка линии Высоты (Altitude) - Зеленая сплошная с легким свечением
+            ctx.shadowColor = '#34d399'; // emerald-400
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.strokeStyle = '#34d399'; 
+            ctx.lineWidth = 2.5;
+            for (let i = 0; i < history.length; i++) {
+                const x = w - (history.length - i - 1) * dx;
+                const y = getY(history[i].a);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Сброс свечения
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+        }
+
+        // Запуск
+        updateDisplays();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
